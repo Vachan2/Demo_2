@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sentinel — Demo 2 Live Dashboard</title>
+  <style>
+    /* ── Reset + base ───────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d1117;
+      --surface:   #161b22;
+      --border:    #30363d;
+      --text:      #e6edf3;
+      --muted:     #8b949e;
+      --green:     #3fb950;
+      --yellow:    #d29922;
+      --red:       #f85149;
+      --blue:      #58a6ff;
+      --purple:    #bc8cff;
+      --accent:    #1f6feb;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      font-size: 14px;
+      min-height: 100vh;
+    }
+
+    /* ── Layout ─────────────────────────────────────────────────────────── */
+    .shell {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 24px 20px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 28px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .topbar h1 {
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--blue);
+      letter-spacing: -0.3px;
+    }
+
+    .topbar .subtitle { color: var(--muted); font-size: 12px; margin-top: 2px; }
+
+    .badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+    }
+
+    .badge-ok      { background: rgba(63,185,80,.15); color: var(--green); }
+    .badge-warn    { background: rgba(210,153,34,.15); color: var(--yellow); }
+    .badge-critical{ background: rgba(248,81,73,.15);  color: var(--red); }
+    .badge-unknown { background: rgba(139,148,158,.12); color: var(--muted); }
+
+    /* ── KPI grid ────────────────────────────────────────────────────────── */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+
+    .kpi {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 18px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .kpi::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: var(--accent);
+      opacity: 0.6;
+    }
+
+    .kpi.good::before  { background: var(--green); }
+    .kpi.warn::before  { background: var(--yellow); }
+    .kpi.bad::before   { background: var(--red); }
+
+    .kpi-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; }
+    .kpi-value { font-size: 28px; font-weight: 700; margin: 6px 0 2px; line-height: 1; }
+    .kpi-unit  { font-size: 12px; color: var(--muted); }
+
+    .kpi.good .kpi-value  { color: var(--green); }
+    .kpi.warn .kpi-value  { color: var(--yellow); }
+    .kpi.bad  .kpi-value  { color: var(--red); }
+
+    /* ── Two-col row ─────────────────────────────────────────────────────── */
+    .row2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    @media (max-width: 720px) { .row2 { grid-template-columns: 1fr; } }
+
+    /* ── Card ────────────────────────────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .card-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .card-header h2 {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .card-body { padding: 16px; }
+
+    /* ── Sparkline canvas ────────────────────────────────────────────────── */
+    .chart-wrap { position: relative; height: 120px; }
+    canvas { width: 100%; height: 100%; }
+
+    /* ── Incident list ───────────────────────────────────────────────────── */
+    .incident-list { list-style: none; }
+
+    .incident-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .incident-item:last-child { border-bottom: none; }
+
+    .incident-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      margin-top: 4px;
+      flex-shrink: 0;
+    }
+
+    .dot-open     { background: var(--yellow); box-shadow: 0 0 6px var(--yellow); }
+    .dot-resolved { background: var(--green); }
+    .dot-failed   { background: var(--red); }
+
+    .incident-id   { font-weight: 600; font-size: 13px; }
+    .incident-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .incident-status { margin-left: auto; flex-shrink: 0; }
+
+    /* ── RCA panel ───────────────────────────────────────────────────────── */
+    #rca-panel { margin-bottom: 24px; }
+
+    .rca-root { font-size: 14px; line-height: 1.6; color: var(--text); margin-bottom: 12px; }
+
+    .rca-chain { list-style: none; }
+
+    .rca-chain li {
+      padding: 6px 10px;
+      margin-bottom: 4px;
+      background: rgba(88,166,255,.06);
+      border-left: 2px solid var(--blue);
+      border-radius: 0 4px 4px 0;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .confidence-bar {
+      height: 6px;
+      background: var(--border);
+      border-radius: 3px;
+      margin: 10px 0 4px;
+      overflow: hidden;
+    }
+
+    .confidence-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--blue), var(--purple));
+      border-radius: 3px;
+      transition: width 0.8s ease;
+    }
+
+    /* ── Timeline ────────────────────────────────────────────────────────── */
+    .timeline { list-style: none; }
+
+    .timeline li {
+      position: relative;
+      padding: 6px 0 6px 20px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .timeline li::before {
+      content: '';
+      position: absolute;
+      left: 5px; top: 12px;
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--border);
+    }
+
+    .timeline li:first-child::before { background: var(--blue); }
+    .timeline li:last-child::before  { background: var(--green); }
+
+    /* ── Before/after table ──────────────────────────────────────────────── */
+    .compare-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+
+    .compare-table th {
+      padding: 8px 12px;
+      background: rgba(255,255,255,.04);
+      text-align: left;
+      font-weight: 600;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--muted);
+    }
+
+    .compare-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+
+    .before-val { color: var(--red); }
+    .after-val  { color: var(--green); }
+
+    /* ── Empty state ─────────────────────────────────────────────────────── */
+    .empty { padding: 24px; text-align: center; color: var(--muted); font-size: 13px; }
+
+    /* ── Footer ──────────────────────────────────────────────────────────── */
+    .footer {
+      margin-top: 32px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+      font-size: 11px;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    /* ── Pulse animation for open incidents ──────────────────────────────── */
+    @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+    .pulsing { animation: pulse 1.8s ease-in-out infinite; }
+  </style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- ── Top bar ──────────────────────────────────────────────────────────── -->
+  <div class="topbar">
+    <div>
+      <h1>Sentinel SRE Agent — Demo 2</h1>
+      <div class="subtitle">Redis Cache Stampede / Cascading Database Overload</div>
+    </div>
+    <div>
+      <span id="sentinel-status" class="badge badge-unknown">connecting…</span>
+      &nbsp;
+      <span id="svc-status" class="badge badge-unknown">user-service…</span>
+    </div>
+  </div>
+
+  <!-- ── KPI row ───────────────────────────────────────────────────────────── -->
+  <div class="kpi-grid" id="kpi-grid">
+    <div class="kpi" id="kpi-cache">
+      <div class="kpi-label">Redis Hit Rate</div>
+      <div class="kpi-value" id="kpi-cache-val">—</div>
+      <div class="kpi-unit">%</div>
+    </div>
+    <div class="kpi" id="kpi-dbqps">
+      <div class="kpi-label">DB Queries / sec</div>
+      <div class="kpi-value" id="kpi-dbqps-val">—</div>
+      <div class="kpi-unit">q/s</div>
+    </div>
+    <div class="kpi" id="kpi-p95">
+      <div class="kpi-label">P95 Latency</div>
+      <div class="kpi-value" id="kpi-p95-val">—</div>
+      <div class="kpi-unit">ms</div>
+    </div>
+    <div class="kpi" id="kpi-err">
+      <div class="kpi-label">Error Rate</div>
+      <div class="kpi-value" id="kpi-err-val">—</div>
+      <div class="kpi-unit">%</div>
+    </div>
+    <div class="kpi" id="kpi-rps">
+      <div class="kpi-label">Requests / sec</div>
+      <div class="kpi-value" id="kpi-rps-val">—</div>
+      <div class="kpi-unit">req/s</div>
+    </div>
+    <div class="kpi" id="kpi-pool">
+      <div class="kpi-label">DB Pool Used</div>
+      <div class="kpi-value" id="kpi-pool-val">—</div>
+      <div class="kpi-unit">connections</div>
+    </div>
+  </div>
+
+  <!-- ── Charts + Incidents ────────────────────────────────────────────────── -->
+  <div class="row2">
+
+    <!-- Cache hit rate sparkline -->
+    <div class="card">
+      <div class="card-header">
+        <h2>Redis Hit Rate</h2>
+        <span id="failure-badge" class="badge badge-unknown" style="display:none"></span>
+      </div>
+      <div class="card-body">
+        <div class="chart-wrap">
+          <canvas id="chart-cache"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- DB queries/sec sparkline -->
+    <div class="card">
+      <div class="card-header"><h2>DB Queries / sec</h2></div>
+      <div class="card-body">
+        <div class="chart-wrap">
+          <canvas id="chart-dbqps"></canvas>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── Incident list ────────────────────────────────────────────────────── -->
+  <div class="row2">
+    <div class="card">
+      <div class="card-header">
+        <h2>Incidents</h2>
+        <span id="incident-count" class="badge badge-unknown">0</span>
+      </div>
+      <div class="card-body" style="padding:0">
+        <ul class="incident-list" id="incident-list">
+          <li class="empty">No incidents yet</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Active incident RCA -->
+    <div class="card" id="rca-panel">
+      <div class="card-header">
+        <h2>Root Cause Analysis</h2>
+        <span id="rca-confidence-badge" class="badge badge-unknown">—</span>
+      </div>
+      <div class="card-body">
+        <div id="rca-content">
+          <div class="empty">Waiting for incident…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Before / After verification table ────────────────────────────────── -->
+  <div class="card" id="verify-card" style="display:none; margin-bottom:24px">
+    <div class="card-header">
+      <h2>Verification — Before / After</h2>
+      <span id="verify-badge" class="badge badge-unknown">—</span>
+    </div>
+    <div class="card-body" style="padding:0">
+      <table class="compare-table">
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th>Before</th>
+            <th>After</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="verify-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── Incident timeline ────────────────────────────────────────────────── -->
+  <div class="card" id="timeline-card" style="display:none; margin-bottom:24px">
+    <div class="card-header"><h2>Incident Timeline</h2></div>
+    <div class="card-body" style="padding: 8px 16px">
+      <ul class="timeline" id="timeline-list"></ul>
+    </div>
+  </div>
+
+  <div class="footer">
+    <span>Sentinel SRE Agent · Demo 2</span>
+    <span id="last-updated">—</span>
+  </div>
+
+</div>
+
+<!-- ── Scripts ───────────────────────────────────────────────────────────────── -->
+<script>
+const USER_SVC  = 'http://localhost:9001';
+const SENTINEL  = 'http://localhost:8002';
+const INTERVAL  = 2500; // ms
+
+// ── Sparkline data ────────────────────────────────────────────────────────────
+const MAX_POINTS = 40;
+const cacheData  = [];
+const dbqpsData  = [];
+
+// ── Canvas sparkline renderer ─────────────────────────────────────────────────
+function drawSparkline(canvasId, data, maxVal, color, fillColor) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.parentElement.offsetWidth;
+  const H = canvas.parentElement.offsetHeight;
+  canvas.width  = W;
+  canvas.height = H;
+
+  ctx.clearRect(0, 0, W, H);
+  if (data.length < 2) return;
+
+  const step = W / (MAX_POINTS - 1);
+  const pad  = 8;
+
+  // Grid lines
+  ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+  ctx.lineWidth = 1;
+  [0.25, 0.5, 0.75].forEach(f => {
+    const y = pad + (1 - f) * (H - pad * 2);
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  });
+
+  // Fill area
+  ctx.beginPath();
+  data.forEach((v, i) => {
+    const x = i * step;
+    const y = pad + (1 - Math.min(v, maxVal) / maxVal) * (H - pad * 2);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.lineTo((data.length - 1) * step, H);
+  ctx.lineTo(0, H);
+  ctx.closePath();
+  ctx.fillStyle = fillColor;
+  ctx.fill();
+
+  // Line
+  ctx.beginPath();
+  data.forEach((v, i) => {
+    const x = i * step;
+    const y = pad + (1 - Math.min(v, maxVal) / maxVal) * (H - pad * 2);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+}
+
+// ── KPI update ────────────────────────────────────────────────────────────────
+function kpiClass(id, isGood) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.remove('good', 'warn', 'bad');
+  el.classList.add(isGood);
+}
+
+function setKpi(valId, cardId, value, fmt, goodFn) {
+  const el = document.getElementById(valId);
+  if (el) el.textContent = fmt(value);
+  kpiClass(cardId, goodFn(value) ? 'good' : 'bad');
+}
+
+// ── Fetch user-service metrics ────────────────────────────────────────────────
+async function fetchSvcMetrics() {
+  try {
+    const r = await fetch(`${USER_SVC}/metrics/raw`);
+    if (!r.ok) throw new Error(r.status);
+    const d = await r.json();
+    const m = d.metrics || {};
+
+    setKpi('kpi-cache-val', 'kpi-cache', m.cache_hit_rate_pct ?? 0,
+      v => v.toFixed(1), v => v >= 80);
+    setKpi('kpi-dbqps-val', 'kpi-dbqps', m.db_queries_per_sec ?? 0,
+      v => v.toFixed(1), v => v <= 30);
+    setKpi('kpi-p95-val',   'kpi-p95',   m.latency_p95_ms ?? 0,
+      v => v.toFixed(0), v => v <= 200);
+    setKpi('kpi-err-val',   'kpi-err',   m.error_rate_pct ?? 0,
+      v => v.toFixed(1), v => v <= 1);
+    setKpi('kpi-rps-val',   'kpi-rps',   m.requests_per_sec ?? 0,
+      v => v.toFixed(1), () => true);
+    setKpi('kpi-pool-val',  'kpi-pool',  (d.pool || {}).used ?? 0,
+      v => v, v => v <= 15);
+
+    // Sparkline data
+    cacheData.push(m.cache_hit_rate_pct ?? 0);
+    dbqpsData.push(m.db_queries_per_sec ?? 0);
+    if (cacheData.length > MAX_POINTS) cacheData.shift();
+    if (dbqpsData.length > MAX_POINTS) dbqpsData.shift();
+
+    drawSparkline('chart-cache', cacheData, 100,
+      'rgba(63,185,80,0.9)', 'rgba(63,185,80,0.12)');
+    drawSparkline('chart-dbqps', dbqpsData, Math.max(50, ...dbqpsData) * 1.2,
+      'rgba(248,81,73,0.9)', 'rgba(248,81,73,0.12)');
+
+    // Failure mode badge
+    const badge = document.getElementById('failure-badge');
+    if (d.failure_mode && d.failure_mode !== 'none') {
+      badge.style.display = 'inline-block';
+      badge.textContent   = `⚠ ${d.failure_mode.replace(/_/g, ' ')}`;
+      badge.className     = 'badge badge-critical pulsing';
+    } else {
+      badge.style.display = 'none';
+    }
+
+    document.getElementById('svc-status').textContent = `v${d.version || '?'} ✓`;
+    document.getElementById('svc-status').className   = 'badge badge-ok';
+
+  } catch {
+    document.getElementById('svc-status').textContent = 'user-service ✗';
+    document.getElementById('svc-status').className   = 'badge badge-critical';
+  }
+}
+
+// ── Fetch Sentinel incidents ──────────────────────────────────────────────────
+async function fetchIncidents() {
+  try {
+    const r = await fetch(`${SENTINEL}/api/v1/incidents`);
+    if (!r.ok) throw new Error(r.status);
+    const incidents = await r.json();
+
+    document.getElementById('sentinel-status').textContent = 'Sentinel ✓';
+    document.getElementById('sentinel-status').className   = 'badge badge-ok';
+
+    const count = incidents.length;
+    const openCount = incidents.filter(
+      i => !['RESOLVED','FAILED'].includes(i.status)
+    ).length;
+    const countEl = document.getElementById('incident-count');
+    countEl.textContent = count;
+    countEl.className = openCount > 0 ? 'badge badge-warn' : 'badge badge-ok';
+
+    // Render list
+    const ul = document.getElementById('incident-list');
+    if (count === 0) {
+      ul.innerHTML = '<li class="empty">No incidents yet</li>';
+    } else {
+      ul.innerHTML = incidents.map(inc => {
+        const dotClass = inc.status === 'RESOLVED' ? 'dot-resolved'
+                       : inc.status === 'FAILED'   ? 'dot-failed'
+                       : 'dot-open';
+        const pulse = !['RESOLVED','FAILED'].includes(inc.status) ? ' pulsing' : '';
+        const badgeClass = inc.status === 'RESOLVED' ? 'badge-ok'
+                         : inc.status === 'FAILED'   ? 'badge-critical'
+                         : 'badge-warn';
+        return `
+          <li class="incident-item">
+            <div class="incident-dot ${dotClass}${pulse}"></div>
+            <div>
+              <div class="incident-id">${inc.id}</div>
+              <div class="incident-meta">
+                ${inc.service} · v${inc.triggering_version || '?'} ·
+                ${new Date(inc.created_at).toLocaleTimeString()}
+              </div>
+            </div>
+            <div class="incident-status">
+              <span class="badge ${badgeClass}">${inc.status.replace(/_/g,' ')}</span>
+            </div>
+          </li>`;
+      }).join('');
+    }
+
+    // Detail for most recent non-terminal (or latest resolved)
+    const active = incidents.find(i => !['RESOLVED','FAILED'].includes(i.status))
+                || incidents[0];
+    if (active) {
+      await fetchIncidentDetail(active.id);
+    }
+
+  } catch {
+    document.getElementById('sentinel-status').textContent = 'Sentinel ✗';
+    document.getElementById('sentinel-status').className   = 'badge badge-critical';
+  }
+}
+
+async function fetchIncidentDetail(incidentId) {
+  try {
+    const r = await fetch(`${SENTINEL}/api/v1/incidents/${incidentId}`);
+    if (!r.ok) return;
+    const inc = await r.json();
+
+    // RCA panel
+    const rca = inc.rca;
+    const rcaEl = document.getElementById('rca-content');
+    const rcaBadge = document.getElementById('rca-confidence-badge');
+
+    if (rca) {
+      const pct = Math.round((rca.confidence || 0) * 100);
+      rcaBadge.textContent = `${pct}% confidence`;
+      rcaBadge.className = pct >= 80 ? 'badge badge-ok' : 'badge badge-warn';
+
+      const chainHtml = (rca.reasoning_chain || []).map(s =>
+        `<li>${s}</li>`
+      ).join('');
+
+      rcaEl.innerHTML = `
+        <div class="rca-root">${rca.root_cause || ''}</div>
+        <div class="confidence-bar">
+          <div class="confidence-fill" style="width:${pct}%"></div>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:12px">
+          ${pct}% confidence · ${rca.affected_file || ''}
+          ${rca.affected_function ? '· ' + rca.affected_function + '()' : ''}
+        </div>
+        ${chainHtml ? `<ul class="rca-chain">${chainHtml}</ul>` : ''}
+      `;
+    } else {
+      rcaEl.innerHTML = '<div class="empty">Investigation in progress…</div>';
+      rcaBadge.textContent = '—';
+      rcaBadge.className = 'badge badge-unknown';
+    }
+
+    // Verification table
+    const ver = inc.verification;
+    const verCard = document.getElementById('verify-card');
+    if (ver && ver.before && ver.after) {
+      verCard.style.display = 'block';
+      const badge = document.getElementById('verify-badge');
+      badge.textContent = ver.passed ? 'RESOLVED' : 'FAILED';
+      badge.className   = ver.passed ? 'badge badge-ok' : 'badge badge-critical';
+
+      const specs = [
+        {key:'cache_hit_rate_pct', label:'Redis Hit Rate',    unit:'%',   good: (b,a) => a > b},
+        {key:'db_queries_per_sec', label:'DB Queries/sec',    unit:'q/s', good: (b,a) => a < b},
+        {key:'latency_p95_ms',     label:'P95 Latency',       unit:'ms',  good: (b,a) => a < b},
+        {key:'error_rate_pct',     label:'Error Rate',        unit:'%',   good: (b,a) => a < b},
+      ];
+      document.getElementById('verify-tbody').innerHTML = specs.map(s => {
+        const b = (ver.before[s.key] ?? 0).toFixed(1);
+        const a = (ver.after[s.key]  ?? 0).toFixed(1);
+        const ok = s.good(parseFloat(b), parseFloat(a));
+        return `<tr>
+          <td>${s.label}</td>
+          <td class="before-val">${b}${s.unit}</td>
+          <td class="after-val">${a}${s.unit}</td>
+          <td>${ok ? '✅' : '❌'}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    // Timeline
+    const timelineCard = document.getElementById('timeline-card');
+    const timeline     = inc.timeline || [];
+    if (timeline.length > 0) {
+      timelineCard.style.display = 'block';
+      document.getElementById('timeline-list').innerHTML = timeline.map(
+        e => `<li>${e}</li>`
+      ).join('');
+    }
+
+  } catch { /* ignore */ }
+}
+
+// ── Tick ──────────────────────────────────────────────────────────────────────
+async function tick() {
+  await Promise.all([fetchSvcMetrics(), fetchIncidents()]);
+  document.getElementById('last-updated').textContent =
+    'Updated ' + new Date().toLocaleTimeString();
+}
+
+tick();
+setInterval(tick, INTERVAL);
+window.addEventListener('resize', () => {
+  drawSparkline('chart-cache', cacheData, 100,
+    'rgba(63,185,80,0.9)', 'rgba(63,185,80,0.12)');
+  drawSparkline('chart-dbqps', dbqpsData, Math.max(50, ...dbqpsData) * 1.2,
+    'rgba(248,81,73,0.9)', 'rgba(248,81,73,0.12)');
+});
+</script>
+</body>
+</html>

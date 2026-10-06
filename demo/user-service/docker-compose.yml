@@ -1,0 +1,44 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: userdb
+      POSTGRES_USER: demo
+      POSTGRES_PASSWORD: demo
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U demo -d userdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - ./seed.sql:/docker-entrypoint-initdb.d/seed.sql:ro
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  user-api:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgresql://demo:demo@postgres:5432/userdb"
+      REDIS_URL: "redis://redis:6379"
+      SENTINEL_URL: "http://host.docker.internal:8002"
+      DEMO_FAILURE_MODE: "none"
+    ports:
+      - "9001:9001"
+    command: uvicorn main:app --host 0.0.0.0 --port 9001
